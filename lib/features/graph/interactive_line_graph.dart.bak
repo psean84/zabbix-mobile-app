@@ -1,0 +1,767 @@
+import 'dart:async';
+
+import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/material.dart';
+
+import '../../core/api_client.dart';
+import '../../core/utils.dart';
+
+enum GraphRenderMode { line, bar }
+
+class InteractiveLineGraph extends StatefulWidget {
+  final List<dynamic> selectedNumericItems;
+  final TextEditingController? externalFromController;
+  final TextEditingController? externalToController;
+  final bool showControls;
+  final GraphRenderMode mode;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
+  final double chartHeight;
+
+  const InteractiveLineGraph({
+    super.key,
+    required this.selectedNumericItems,
+    this.externalFromController,
+    this.externalToController,
+    this.showControls = true,
+    this.mode = GraphRenderMode.line,
+    this.backgroundColor,
+    this.foregroundColor,
+    this.chartHeight = 300,
+  });
+
+  @override
+  State<InteractiveLineGraph> createState() => _InteractiveLineGraphState();
+}
+
+class _InteractiveLineGraphState extends State<InteractiveLineGraph> {
+  final TextEditingController _localFromCtrl = TextEditingController();
+  final TextEditingController _localToCtrl = TextEditingController();
+
+  bool loading = false;
+  String error = '';
+  int loadedChunks = 0;
+  int totalChunks = 0;
+  int? cacheFrom;
+  int? cacheTo;
+  Set<String> cacheItemIds = <String>{};
+  final Map<String, List<FlSpot>> cacheSeries = <String, List<FlSpot>>{};
+  Timer? _externalSyncDebounce;
+
+  TextEditingController get fromCtrl => widget.externalFromController ?? _localFromCtrl;
+  TextEditingController get toCtrl => widget.externalToController ?? _localToCtrl;
+
+  final Map<String, List<FlSpot>> series = {};
+  double minX = 0;
+  double maxX = 1;
+  double minY = 0;
+  double maxY = 1;
+  double viewMinX = 0;
+  double viewMaxX = 1;
+
+  double? dragStartX;
+  double? dragEndX;
+
+  @override
+  void initState() {
+    super.initState();
+    if (fromCtrl.text.trim().isEmpty || toCtrl.text.trim().isEmpty) {
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      fromCtrl.text = formatDateTimeInput(
+        DateTime.fromMillisecondsSinceEpoch((now - (3 * 3600)) * 1000).toLocal(),
+      );
+      toCtrl.text = formatDateTimeInput(
+        DateTime.fromMillisecondsSinceEpoch(now * 1000).toLocal(),
+      );
+    }
+    if (!widget.showControls &&
+        widget.externalFromController != null &&
+        widget.externalToController != null) {
+      widget.externalFromController!.addListener(_onExternalRangeChanged);
+      widget.externalToController!.addListener(_onExternalRangeChanged);
+    }
+    _loadHistory();
+  }
+
+  @override
+  void didUpdateWidget(covariant InteractiveLineGraph oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldIds = oldWidget.selectedNumericItems
+        .map((i) => (i['itemid'] ?? '').toString())
+        .toSet();
+    final newIds = widget.selectedNumericItems
+        .map((i) => (i['itemid'] ?? '').toString())
+        .toSet();
+    if (oldIds.length != newIds.length || !oldIds.containsAll(newIds)) {
+      _loadHistory();
+    }
+  }
+
+  @override
+  void dispose() {
+    if (!widget.showControls &&
+        widget.externalFromController != null &&
+        widget.externalToController != null) {
+      widget.externalFromController!.removeListener(_onExternalRangeChanged);
+      widget.externalToController!.removeListener(_onExternalRangeChanged);
+    }
+    _externalSyncDebounce?.cancel();
+    _localFromCtrl.dispose();
+    _localToCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onExternalRangeChanged() {
+    _externalSyncDebounce?.cancel();
+    _externalSyncDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) _loadHistory();
+    });
+  }
+
+  List<String> _numericItemIds() {
+    return widget.selectedNumericItems
+        .where((i) => isNumericItem(i))
+        .map((i) => (i['itemid'] ?? '').toString())
+        .where((id) => id.isNotEmpty && !id.startsWith('lld-'))
+        .toList();
+  }
+
+  bool _hasCoveringCache({
+    required List<String> itemIds,
+    required int from,
+    required int to,
+  }) {
+    if (cacheFrom == null || cacheTo == null) return false;
+    if (cacheSeries.isEmpty) return false;
+    if (from < cacheFrom! || to > cacheTo!) return false;
+    final req = itemIds.toSet();
+    return req.length == cacheItemIds.length && req.containsAll(cacheItemIds);
+  }
+
+  Map<String, List<FlSpot>> _sliceCache({
+    required int from,
+    required int to,
+  }) {
+    final out = <String, List<FlSpot>>{};
+    for (final entry in cacheSeries.entries) {
+      out[entry.key] = entry.value
+          .where((p) => p.x >= from && p.x <= to)
+          .toList()
+        ..sort((a, b) => a.x.compareTo(b.x));
+    }
+    return out;
+  }
+
+  void _applySeriesToView(Map<String, List<FlSpot>> map, {required int from, required int to}) {
+    double localMinX = double.infinity;
+    double localMaxX = double.negativeInfinity;
+    double localMinY = double.infinity;
+    double localMaxY = double.negativeInfinity;
+    for (final points in map.values) {
+      for (final p in points) {
+        if (p.x < localMinX) localMinX = p.x;
+        if (p.x > localMaxX) localMaxX = p.x;
+        if (p.y < localMinY) localMinY = p.y;
+        if (p.y > localMaxY) localMaxY = p.y;
+      }
+    }
+    setState(() {
+      series
+        ..clear()
+        ..addAll(map);
+      minX = localMinX.isFinite ? localMinX : from.toDouble();
+      maxX = localMaxX.isFinite ? localMaxX : to.toDouble();
+      minY = localMinY.isFinite ? localMinY : 0;
+      maxY = localMaxY.isFinite ? localMaxY : 1;
+      viewMinX = minX;
+      viewMaxX = maxX;
+      loading = false;
+    });
+  }
+
+  Future<void> _loadHistory() async {
+    final itemIds = _numericItemIds();
+    if (itemIds.isEmpty) {
+      setState(() {
+        loading = false;
+        error = 'Select numeric properties to render the graph.';
+        series.clear();
+      });
+      return;
+    }
+
+    final from = parseTimeInputToEpoch(fromCtrl.text.trim());
+    final to = parseTimeInputToEpoch(toCtrl.text.trim());
+    if (from == null || to == null || from >= to) {
+      setState(() {
+        loading = false;
+        error = 'Enter valid time range. Use YYYY-MM-DD HH:MM or epoch.';
+      });
+      return;
+    }
+
+    try {
+      setState(() {
+        loading = true;
+        error = '';
+        loadedChunks = 0;
+        totalChunks = 0;
+      });
+
+      if (_hasCoveringCache(itemIds: itemIds, from: from, to: to)) {
+        final sliced = _sliceCache(from: from, to: to);
+        if (!mounted) return;
+        _applySeriesToView(sliced, from: from, to: to);
+        return;
+      }
+
+      final map = <String, List<FlSpot>>{};
+      final chunkSizeSec = 12 * 3600;
+      final span = to - from;
+      final chunks = span <= chunkSizeSec ? 1 : (span / chunkSizeSec).ceil();
+      if (mounted) {
+        setState(() {
+          totalChunks = chunks;
+          loadedChunks = 0;
+        });
+      }
+
+      String partialError = '';
+      for (var i = 0; i < chunks; i++) {
+        final chunkFrom = from + (i * chunkSizeSec);
+        final chunkTo = (chunkFrom + chunkSizeSec) > to ? to : (chunkFrom + chunkSizeSec);
+        try {
+          final data = await ApiClient.fetchHistoryChunk(
+            itemIds: itemIds,
+            from: chunkFrom,
+            to: chunkTo,
+          );
+          final points = data['points'];
+          if (points is! List) continue;
+
+          for (final p in points) {
+            final itemid = (p['itemid'] ?? '').toString();
+            final x = (p['clock'] is num)
+                ? (p['clock'] as num).toDouble()
+                : double.tryParse((p['clock'] ?? '').toString());
+            final y = (p['value'] is num)
+                ? (p['value'] as num).toDouble()
+                : double.tryParse((p['value'] ?? '').toString());
+            if (itemid.isEmpty || x == null || y == null) continue;
+            map.putIfAbsent(itemid, () => <FlSpot>[]).add(FlSpot(x, y));
+          }
+        } catch (e) {
+          partialError = 'Some chunks failed to load: $e';
+        } finally {
+          if (mounted) {
+            setState(() => loadedChunks = i + 1);
+          }
+        }
+      }
+
+      for (final entry in map.entries) {
+        entry.value.sort((a, b) => a.x.compareTo(b.x));
+      }
+
+      if (!mounted) return;
+      cacheFrom = from;
+      cacheTo = to;
+      cacheItemIds = itemIds.toSet();
+      cacheSeries
+        ..clear()
+        ..addAll(map);
+      _applySeriesToView(map, from: from, to: to);
+      setState(() {
+        error = partialError;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        error = 'Failed to load history: $e';
+      });
+    }
+  }
+
+  String _nameForItemId(String itemid) {
+    final item = widget.selectedNumericItems.firstWhere(
+      (i) => (i['itemid'] ?? '').toString() == itemid,
+      orElse: () => {},
+    );
+    final raw = '${(item['name'] ?? '').toString().toLowerCase()} ${(item['key_'] ?? '').toString().toLowerCase()}';
+    final hasTx = RegExp(r'(^|[^a-z])(tx|out)([^a-z]|$)').hasMatch(raw);
+    final hasRx = RegExp(r'(^|[^a-z])(rx|in)([^a-z]|$)').hasMatch(raw);
+    if (hasTx && (raw.contains('traffic') || raw.contains('bps') || raw.contains('tx_bytes'))) {
+      return 'Tx Traffic';
+    }
+    if (hasRx && (raw.contains('traffic') || raw.contains('bps') || raw.contains('rx_bytes'))) {
+      return 'Rx Traffic';
+    }
+    if (hasRx && raw.contains('drop')) return 'Rx Drops';
+    if (hasRx && raw.contains('error')) return 'Rx Error';
+    if (hasRx && raw.contains('octet')) return 'Rx Octets';
+    if (hasTx && raw.contains('octet')) return 'Tx Octets';
+    if (raw.contains('arp') && raw.contains('count')) return 'Arp Count';
+    return 'Metric';
+  }
+
+  int _legendOrder(String name) {
+    switch (name) {
+      case 'Rx Traffic':
+        return 0;
+      case 'Tx Traffic':
+        return 1;
+      case 'Rx Drops':
+        return 2;
+      case 'Rx Error':
+        return 3;
+      case 'Rx Octets':
+        return 4;
+      case 'Tx Octets':
+        return 5;
+      case 'Arp Count':
+        return 6;
+      default:
+        return 100;
+    }
+  }
+
+  String _fmt3(double v) {
+    final abs = v.abs();
+    String u = '';
+    double n = v;
+    if (abs >= 1e12) {
+      n = v / 1e12;
+      u = 'T';
+    } else if (abs >= 1e9) {
+      n = v / 1e9;
+      u = 'G';
+    } else if (abs >= 1e6) {
+      n = v / 1e6;
+      u = 'M';
+    } else if (abs >= 1e3) {
+      n = v / 1e3;
+      u = 'k';
+    }
+    final d = n.abs() >= 100 ? 0 : (n.abs() >= 10 ? 1 : 2);
+    return '${n.toStringAsFixed(d)}$u';
+  }
+
+  void _applyDragSelection() {
+    if (dragStartX == null || dragEndX == null) return;
+    final from = dragStartX! < dragEndX! ? dragStartX! : dragEndX!;
+    final to = dragStartX! < dragEndX! ? dragEndX! : dragStartX!;
+    if ((to - from) < 30) return;
+
+    setState(() {
+      fromCtrl.text = formatDateTimeInput(
+        DateTime.fromMillisecondsSinceEpoch((from.toInt()) * 1000).toLocal(),
+      );
+      toCtrl.text = formatDateTimeInput(
+        DateTime.fromMillisecondsSinceEpoch((to.toInt()) * 1000).toLocal(),
+      );
+    });
+    _loadHistory();
+  }
+
+  void _resetZoom() {
+    setState(() {
+      viewMinX = minX;
+      viewMaxX = maxX;
+    });
+  }
+
+  void _zoomByFactor(double factor) {
+    if (maxX <= minX || viewMaxX <= viewMinX) return;
+    final fullSpan = maxX - minX;
+    final center = (viewMinX + viewMaxX) / 2;
+    var newSpan = (viewMaxX - viewMinX) * factor;
+    if (newSpan < 60) newSpan = 60;
+    if (newSpan > fullSpan) newSpan = fullSpan;
+
+    var left = center - newSpan / 2;
+    var right = center + newSpan / 2;
+    if (left < minX) {
+      right += (minX - left);
+      left = minX;
+    }
+    if (right > maxX) {
+      left -= (right - maxX);
+      right = maxX;
+    }
+
+    setState(() {
+      viewMinX = left.clamp(minX, maxX);
+      viewMaxX = right.clamp(minX, maxX);
+    });
+  }
+
+  void _panByRatio(double ratio) {
+    if (viewMaxX <= viewMinX) return;
+    final span = viewMaxX - viewMinX;
+    final shift = span * ratio;
+    var left = viewMinX + shift;
+    var right = viewMaxX + shift;
+    if (left < minX) {
+      right += (minX - left);
+      left = minX;
+    }
+    if (right > maxX) {
+      left -= (right - maxX);
+      right = maxX;
+    }
+    setState(() {
+      viewMinX = left.clamp(minX, maxX);
+      viewMaxX = right.clamp(minX, maxX);
+    });
+  }
+
+  void _applyPresetHours(int hours) {
+    final toEpoch =
+        parseTimeInputToEpoch(toCtrl.text.trim()) ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    final fromEpoch = toEpoch - (hours * 3600);
+    setState(() {
+      fromCtrl.text = formatDateTimeInput(
+        DateTime.fromMillisecondsSinceEpoch(fromEpoch * 1000).toLocal(),
+      );
+      toCtrl.text = formatDateTimeInput(
+        DateTime.fromMillisecondsSinceEpoch(toEpoch * 1000).toLocal(),
+      );
+    });
+    _loadHistory();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = widget.backgroundColor ?? Theme.of(context).cardColor;
+    final fg = widget.foregroundColor ?? Theme.of(context).textTheme.bodyMedium?.color ?? Colors.black87;
+    final orderedEntries = series.entries.toList()
+      ..sort((a, b) {
+        final an = _nameForItemId(a.key);
+        final bn = _nameForItemId(b.key);
+        final c = _legendOrder(an).compareTo(_legendOrder(bn));
+        if (c != 0) return c;
+        return an.compareTo(bn);
+      });
+    final lines = <LineChartBarData>[];
+    var idx = 0;
+    for (final entry in orderedEntries) {
+      lines.add(
+        LineChartBarData(
+          spots: entry.value,
+          isCurved: false,
+          barWidth: 2,
+          color: seriesColor(idx++),
+          dotData: const FlDotData(show: false),
+        ),
+      );
+    }
+
+    final itemIdsOrdered = orderedEntries.map((e) => e.key).toList();
+    final grouped = <int, List<double>>{};
+    for (var s = 0; s < itemIdsOrdered.length; s++) {
+      final id = itemIdsOrdered[s];
+      final points = series[id] ?? const <FlSpot>[];
+      for (final p in points) {
+        final key = p.x.toInt();
+        grouped.putIfAbsent(key, () => List<double>.filled(itemIdsOrdered.length, 0));
+        grouped[key]![s] = p.y;
+      }
+    }
+    final sortedX = grouped.keys.toList()..sort();
+    final barGroups = sortedX.map((x) {
+      final vals = grouped[x]!;
+      return BarChartGroupData(
+        x: x,
+        barsSpace: 2,
+        barRods: List.generate(vals.length, (i) {
+          return BarChartRodData(
+            toY: vals[i],
+            width: 5,
+            color: seriesColor(i),
+            borderRadius: BorderRadius.circular(2),
+          );
+        }),
+      );
+    }).toList();
+    final visibleBarGroups = barGroups
+        .where((g) => g.x.toDouble() >= viewMinX && g.x.toDouble() <= viewMaxX)
+        .toList();
+
+    return Card(
+      color: bg,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.mode == GraphRenderMode.bar ? 'Error/Drop Graph' : 'Traffic Graph',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: fg),
+            ),
+            const SizedBox(height: 8),
+            if (widget.showControls) const SizedBox(height: 4),
+            if (widget.showControls)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton(
+                    onPressed: loading ? null : _loadHistory,
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      minimumSize: const Size(0, 34),
+                    ),
+                    child: const Text('Apply'),
+                  ),
+                  OutlinedButton(onPressed: loading ? null : () => _applyPresetHours(1), child: const Text('1h')),
+                  OutlinedButton(onPressed: loading ? null : () => _applyPresetHours(3), child: const Text('3h')),
+                  OutlinedButton(onPressed: loading ? null : () => _applyPresetHours(7), child: const Text('7h')),
+                  OutlinedButton(onPressed: loading ? null : () => _applyPresetHours(12), child: const Text('12h')),
+                  OutlinedButton(onPressed: loading ? null : () => _applyPresetHours(24), child: const Text('1 day')),
+                ],
+              ),
+            if (widget.showControls) const SizedBox(height: 6),
+            if (error.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(error, style: TextStyle(color: Colors.red.shade700)),
+              ),
+            if (loading) const LinearProgressIndicator(),
+            if (loading && totalChunks > 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Loading history chunks: $loadedChunks/$totalChunks (12h per chunk)',
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: widget.chartHeight,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.maxWidth;
+                  if (widget.mode == GraphRenderMode.bar) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.orangeAccent.withOpacity(0.78), width: 2.0),
+                        ),
+                        child: BarChart(
+                          BarChartData(
+                            minY: minY == maxY ? minY - 1 : minY,
+                            maxY: minY == maxY ? maxY + 1 : maxY,
+                            barGroups: visibleBarGroups,
+                            gridData: FlGridData(show: true, getDrawingHorizontalLine: (_) {
+                              return FlLine(color: Colors.orangeAccent.withOpacity(0.2), strokeWidth: 1);
+                            }),
+                            borderData: FlBorderData(
+                              show: true,
+                              border: Border.all(color: Colors.orangeAccent.withOpacity(0.55)),
+                            ),
+                            titlesData: FlTitlesData(
+                              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                              leftTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 42,
+                                  getTitlesWidget: (value, meta) => Text(
+                                    _fmt3(value),
+                                    style: TextStyle(fontSize: 10, color: fg.withOpacity(0.85)),
+                                  ),
+                                ),
+                              ),
+                              bottomTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: false,
+                                  reservedSize: 0,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.cyanAccent.withOpacity(0.78), width: 2.0),
+                      ),
+                      child: GestureDetector(
+                    onHorizontalDragStart: (d) {
+                      if (maxX <= minX) return;
+                      final clamped = d.localPosition.dx.clamp(0.0, width);
+                      final x = minX + (clamped / width) * (maxX - minX);
+                      setState(() {
+                        dragStartX = x;
+                        dragEndX = x;
+                      });
+                    },
+                    onHorizontalDragUpdate: (d) {
+                      if (dragStartX == null || maxX <= minX) return;
+                      final clamped = d.localPosition.dx.clamp(0.0, width);
+                      final x = minX + (clamped / width) * (maxX - minX);
+                      setState(() => dragEndX = x);
+                    },
+                    onHorizontalDragEnd: (_) => _applyDragSelection(),
+                    child: Stack(
+                      children: [
+                        LineChart(
+                          LineChartData(
+                            minX: viewMinX,
+                            maxX: viewMaxX,
+                            minY: minY == maxY ? minY - 1 : minY,
+                            maxY: minY == maxY ? maxY + 1 : maxY,
+                            lineBarsData: lines,
+                            gridData: FlGridData(show: true, getDrawingHorizontalLine: (_) {
+                              return FlLine(color: fg.withOpacity(0.15), strokeWidth: 1);
+                            }),
+                            borderData: FlBorderData(
+                              show: true,
+                              border: Border.all(color: fg.withOpacity(0.3)),
+                            ),
+                            titlesData: FlTitlesData(
+                              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                              leftTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 42,
+                                  getTitlesWidget: (value, meta) => Text(
+                                    _fmt3(value),
+                                    style: TextStyle(fontSize: 10, color: fg.withOpacity(0.85)),
+                                  ),
+                                ),
+                              ),
+                              bottomTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 34,
+                                  interval: ((viewMaxX - viewMinX) / 4).abs() < 1
+                                      ? 1
+                                      : (viewMaxX - viewMinX) / 4,
+                                  getTitlesWidget: (value, meta) {
+                                    final dt = DateTime.fromMillisecondsSinceEpoch((value * 1000).toInt());
+                                    final label =
+                                        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                                    return SideTitleWidget(
+                                      meta: meta,
+                                      child: Text(label, style: TextStyle(fontSize: 10, color: fg)),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (dragStartX != null && dragEndX != null)
+                          Positioned.fill(
+                            child: CustomPaint(
+                              painter: _SelectionPainter(
+                                minX: minX,
+                                maxX: maxX,
+                                startX: dragStartX!,
+                                endX: dragEndX!,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 6),
+            ...List.generate((orderedEntries.length / 2).ceil(), (row) {
+              final i1 = row * 2;
+              final i2 = i1 + 1;
+              Widget legendItem(int i) {
+                if (i >= orderedEntries.length) return const SizedBox.shrink();
+                final e = orderedEntries[i];
+                final color = seriesColor(i);
+                return Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _nameForItemId(e.key),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: fg, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    legendItem(i1),
+                    const SizedBox(width: 10),
+                    legendItem(i2),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectionPainter extends CustomPainter {
+  final double minX;
+  final double maxX;
+  final double startX;
+  final double endX;
+
+  _SelectionPainter({
+    required this.minX,
+    required this.maxX,
+    required this.startX,
+    required this.endX,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (maxX <= minX) return;
+    final leftX = ((startX < endX ? startX : endX) - minX) / (maxX - minX) * size.width;
+    final rightX =
+        ((startX < endX ? endX : startX) - minX) / (maxX - minX) * size.width;
+    final rect = Rect.fromLTRB(leftX, 0, rightX, size.height);
+    final fill = Paint()..color = Colors.blue.withOpacity(0.16);
+    final border = Paint()
+      ..style = PaintingStyle.stroke
+      ..color = Colors.blue.withOpacity(0.6)
+      ..strokeWidth = 1.2;
+    canvas.drawRect(rect, fill);
+    canvas.drawRect(rect, border);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SelectionPainter oldDelegate) {
+    return oldDelegate.startX != startX ||
+        oldDelegate.endX != endX ||
+        oldDelegate.minX != minX ||
+        oldDelegate.maxX != maxX;
+  }
+}
