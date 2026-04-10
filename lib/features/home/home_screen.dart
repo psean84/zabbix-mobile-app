@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
@@ -21,13 +20,6 @@ enum _Page { dashboard, hosts, problems, settings, about }
 
 // â”€â”€ Theme-aware color helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // â”€â”€ Theme-aware color helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-class _T {
-  static Color card(BuildContext ctx) => ZbxTheme.of(ctx).bgCard;
-  static Color rim(BuildContext ctx) => ZbxTheme.of(ctx).rim;
-  static Color textPri(BuildContext ctx) => ZbxTheme.of(ctx).textPri;
-  static Color textSec(BuildContext ctx) => ZbxTheme.of(ctx).textSec;
-}
-
 class HomeScreen extends StatefulWidget {
   final String pushStatus;
   final AppSettings settings;

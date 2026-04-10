@@ -1,0 +1,131 @@
+import 'package:flutter/material.dart';
+
+import '../../../core/zbx_theme.dart';
+
+typedef InterfaceTapCallback = void Function(
+  String interfaceName,
+  List<dynamic> items,
+);
+
+class InterfaceListSection extends StatelessWidget {
+  final String title;
+  final List<String> interfaceNames;
+  final Map<String, List<dynamic>> itemsByName;
+  final Color accentColor;
+  final IconData icon;
+  final Color? titleColor;
+  final int? maxItems;
+  final EdgeInsetsGeometry? headerPadding;
+  final String? overflowLabel;
+  final double iconSize;
+  final InterfaceTapCallback onTap;
+
+  const InterfaceListSection({
+    super.key,
+    required this.title,
+    required this.interfaceNames,
+    required this.itemsByName,
+    required this.accentColor,
+    required this.icon,
+    required this.onTap,
+    this.titleColor,
+    this.maxItems,
+    this.headerPadding,
+    this.overflowLabel,
+    this.iconSize = 18,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (interfaceNames.isEmpty) return const SizedBox.shrink();
+
+    final visibleNames = maxItems == null
+        ? interfaceNames
+        : interfaceNames.take(maxItems!).toList();
+    final hiddenCount = interfaceNames.length - visibleNames.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: headerPadding ?? EdgeInsets.zero,
+          child: Text(
+            '$title (${interfaceNames.length})',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: titleColor ?? ZbxT.textSec(context),
+              letterSpacing: 1.0,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        ...visibleNames.map((name) {
+          final items = itemsByName[name] ?? const <dynamic>[];
+          return GestureDetector(
+            onTap: () => onTap(name, items),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 2),
+              color: ZbxT.card(context),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(width: 3, color: accentColor),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      child: Icon(icon, color: accentColor, size: iconSize),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: ZbxT.textPri(context),
+                              ),
+                            ),
+                            Text(
+                              '${items.length} items',
+                              style: TextStyle(
+                                fontSize: 9,
+                                color: ZbxT.textSec(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Icon(
+                        Icons.chevron_right,
+                        size: 13,
+                        color: ZbxT.textSec(context).withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+        if (hiddenCount > 0)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              overflowLabel ?? '+ $hiddenCount more interfaces',
+              style: TextStyle(fontSize: 10, color: ZbxT.textSec(context)),
+            ),
+          ),
+      ],
+    );
+  }
+}

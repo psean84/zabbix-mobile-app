@@ -178,17 +178,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       color: _rxBlue,
       backgroundColor: ZbxT.card(context),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 40),
+        padding: const EdgeInsets.fromLTRB(0, 0, 0, 40),
         children: [
           if (cache.loadError.isNotEmpty)
-            buildDashboardErrorBanner(context, cache.loadError),
-
-          buildDashboardSectionHeader(
-            context,
-            'OVERVIEW',
-            Icons.dashboard_outlined,
+            buildDashboardErrorBanner(
+              context,
+              cache.loadError,
+              style: DashboardVisualStyle.metro,
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+            child: buildDashboardSectionHeader(
+              context,
+              'OVERVIEW',
+              Icons.dashboard_outlined,
+              style: DashboardVisualStyle.metro,
+            ),
           ),
-          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
@@ -198,9 +204,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icons.router,
                   color: _rxBlue,
                   onTap: widget.onHostsTap,
+                  style: DashboardVisualStyle.metro,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 2),
               Expanded(
                 child: DashboardStatTile(
                   label: 'Groups',
@@ -208,11 +215,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icons.folder_outlined,
                   color: _txGreen,
                   onTap: widget.onGroupsTap,
+                  style: DashboardVisualStyle.metro,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 2),
           Row(
             children: [
               Expanded(
@@ -222,9 +230,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icons.warning_amber_rounded,
                   color: _warnAmb,
                   onTap: widget.onProblemsTap,
+                  style: DashboardVisualStyle.metro,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 2),
               Expanded(
                 child: DashboardStatTile(
                   label: 'Disaster',
@@ -236,11 +245,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   trendValues: _disasterTrend,
                   trendDelta: _trendDelta(_disasterTrend),
                   onTap: () => widget.onSeverityTap?.call(5),
+                  style: DashboardVisualStyle.metro,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 2),
           Row(
             children: [
               Expanded(
@@ -252,9 +262,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   trendValues: _highTrend,
                   trendDelta: _trendDelta(_highTrend),
                   onTap: () => widget.onSeverityTap?.call(4),
+                  style: DashboardVisualStyle.metro,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 2),
               Expanded(
                 child: DashboardStatTile(
                   label: 'Warning',
@@ -264,58 +275,66 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   trendValues: _warnTrend,
                   trendDelta: _trendDelta(_warnTrend),
                   onTap: () => widget.onSeverityTap?.call(3),
+                  style: DashboardVisualStyle.metro,
                 ),
               ),
             ],
           ),
           if (_totalProblems > 0) ...[
-            const SizedBox(height: 20),
-            buildDashboardSectionHeader(
-              context,
-              'SEVERITY BREAKDOWN',
-              Icons.bar_chart,
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              child: buildDashboardSectionHeader(
+                context,
+                'SEVERITY BREAKDOWN',
+                Icons.bar_chart,
+                style: DashboardVisualStyle.metro,
+              ),
             ),
-            const SizedBox(height: 10),
             GestureDetector(
               onTap: widget.onProblemsTap,
-              child: DashboardSeverityBar(problems: cache.problems),
+              child: DashboardSeverityBar(
+                problems: cache.problems,
+                style: DashboardVisualStyle.metro,
+              ),
             ),
           ],
           if (groupsSorted.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            buildDashboardSectionHeader(
-              context,
-              'ALERTS BY GROUP',
-              Icons.folder_open_outlined,
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+              child: buildDashboardSectionHeader(
+                context,
+                'ALERTS BY GROUP',
+                Icons.folder_open_outlined,
+                style: DashboardVisualStyle.metro,
+              ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Tap a group to open the Problems screen.',
-              style: TextStyle(fontSize: 10, color: ZbxT.textSec(context)),
-            ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 2),
             ...groupsSorted.take(12).map(
-              (entry) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: DashboardGroupAlertRow(
-                  group: entry.key,
-                  count: entry.value.count,
-                  maxSeverity: entry.value.maxSev,
-                  onTap: () => widget.onGroupTap?.call(
-                    entry.value.groupId,
-                    entry.key,
-                  ),
+              (entry) => DashboardGroupAlertRow(
+                group: entry.key,
+                count: entry.value.count,
+                maxSeverity: entry.value.maxSev,
+                onTap: () => widget.onGroupTap?.call(
+                  entry.value.groupId,
+                  entry.key,
                 ),
+                style: DashboardVisualStyle.metro,
               ),
             ),
           ],
           const SizedBox(height: 20),
-          Center(
-            child: Text(
-              'Auto-refresh every 30 s  .  Pull to refresh',
-              style: TextStyle(
-                fontSize: 10,
-                color: ZbxT.textSec(context).withValues(alpha: 0.6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Center(
+              child: Text(
+                'Auto-refresh every 30 s  .  Pull to refresh',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: ZbxT.textSec(context).withValues(alpha: 0.6),
+                ),
               ),
             ),
           ),

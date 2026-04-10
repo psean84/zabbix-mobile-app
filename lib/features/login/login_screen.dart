@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 
-import '../../core/api_client.dart';
 import '../../core/app_cache.dart';
+import '../../core/api_client.dart';
 import '../../core/app_settings.dart';
 import '../../core/local_store.dart';
 import '../../core/zbx_theme.dart';
+import '../../presentation/controllers/login_controller.dart';
 import '../home/home_screen.dart';
 
 const _rxBlue = ZbxPalette.rxBlue;
 const _txGreen = ZbxPalette.txGreen;
 const _downRed = ZbxPalette.downRed;
-const _gold = Color(0xFFFFD54F);
 
 // ── Theme-aware color helper ──────────────────────────────────────────────────
 // ── Theme-aware color helper ──────────────────────────────────────────────────
@@ -32,7 +33,9 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
-  final _serverCtrl = TextEditingController();
+  final _loginController = LoginController();
+  _LoginFooterApiInfo get _apiInfo =>
+      _LoginFooterApiInfo(_loginController.currentBaseUrl);
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -40,9 +43,11 @@ class _LoginScreenState extends State<LoginScreen>
   bool _loading = false;
   bool _obscure = true;
   bool _rememberMe = true;
-  bool _allowSelfSigned = false;
   String _error = '';
   String _loadMsg = '';
+  bool _checkingRelays = false;
+  List<Map<String, dynamic>> _relayStatus = const [];
+  Timer? _relayTimer;
 
   late final AnimationController _anim;
   late final Animation<double> _fadeIn;
@@ -52,8 +57,7 @@ class _LoginScreenState extends State<LoginScreen>
   void initState() {
     super.initState();
     _rememberMe = widget.settings.rememberMe;
-    _allowSelfSigned = widget.settings.allowSelfSignedCertificates;
-    ApiClient.setAllowSelfSignedCertificates(_allowSelfSigned);
+    _loginController.setAllowSelfSignedCertificates(true);
     _anim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -65,12 +69,20 @@ class _LoginScreenState extends State<LoginScreen>
     ).animate(CurvedAnimation(parent: _anim, curve: Curves.easeOutCubic));
     _anim.forward();
     _loadSaved();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refreshRelayStatus();
+      _relayTimer = Timer.periodic(
+        const Duration(seconds: 8),
+        (_) => _refreshRelayStatus(),
+      );
+    });
   }
 
   @override
   void dispose() {
     _anim.dispose();
-    _serverCtrl.dispose();
+    _relayTimer?.cancel();
     _userCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
@@ -78,17 +90,27 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _loadSaved() async {
     try {
-      _serverCtrl.text = ApiClient.baseUrl;
       final s = await LocalStore.readMap('auth:session');
       final u = (s?['username'] ?? '').toString();
       if (u.isNotEmpty && mounted) setState(() => _userCtrl.text = u);
     } catch (_) {}
   }
 
-  Future<void> _toggleSelfSigned(bool v) async {
-    setState(() => _allowSelfSigned = v);
-    ApiClient.setAllowSelfSignedCertificates(v);
-    await widget.settings.setAllowSelfSignedCertificates(v);
+  Future<void> _refreshRelayStatus() async {
+    if (_checkingRelays || !mounted) return;
+    setState(() => _checkingRelays = true);
+    try {
+      final status = await ApiClient.probeRelayReachability(
+        updateBaseSelection: true,
+      );
+      if (!mounted) return;
+      setState(() => _relayStatus = status);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _relayStatus = const []);
+    } finally {
+      if (mounted) setState(() => _checkingRelays = false);
+    }
   }
 
   Future<void> _login() async {
@@ -101,13 +123,19 @@ class _LoginScreenState extends State<LoginScreen>
     });
 
     try {
-      ApiClient.setAllowSelfSignedCertificates(_allowSelfSigned);
-      await ApiClient.setBaseUrl(_serverCtrl.text.trim());
       setState(() => _loadMsg = 'Authenticating…');
-      await ApiClient.login(_userCtrl.text.trim(), _passCtrl.text.trim());
-      await widget.settings.setRememberMe(_rememberMe);
+      await _loginController.login(
+        settings: widget.settings,
+        username: _userCtrl.text.trim(),
+        password: _passCtrl.text.trim(),
+        allowSelfSignedCertificates: true,
+        rememberMe: _rememberMe,
+        onStatus: (message) {
+          if (!mounted) return;
+          setState(() => _loadMsg = message);
+        },
+      );
       setState(() => _loadMsg = 'Loading network data…');
-      await AppCache.instance.load(force: true);
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -120,26 +148,10 @@ class _LoginScreenState extends State<LoginScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      final msg = e.toString().replaceFirst('Exception: ', '');
-      String friendly;
-      if (msg.contains('SocketException') ||
-          msg.contains('Connection refused') ||
-          msg.contains('unreachable') ||
-          msg.contains('Failed host lookup') ||
-          msg.toLowerCase().contains('timeout')) {
-        friendly = 'Cannot reach server. Check the URL and your network.';
-      } else if (msg.contains('401') ||
-          msg.toLowerCase().contains('invalid') ||
-          msg.toLowerCase().contains('incorrect') ||
-          msg.toLowerCase().contains('unauthori')) {
-        friendly = 'Login failed. Check your username and password.';
-      } else {
-        friendly = msg.isNotEmpty ? msg : 'Login failed. Please try again.';
-      }
       setState(() {
         _loading = false;
         _loadMsg = '';
-        _error = friendly;
+        _error = _loginController.friendlyError(e);
       });
     }
   }
@@ -297,59 +309,113 @@ class _LoginScreenState extends State<LoginScreen>
                     const SizedBox(height: 20),
                   ],
 
-                  // ── Server URL ───────────────────────────────────────────────
-                  _fieldLabel('Relay Server URL'),
+                  _fieldLabel('Relay Servers (fixed priority)'),
                   const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _serverCtrl,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: ZbxT.textPri(context),
-                      fontFamily: 'monospace',
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: ZbxT.lift(context),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: ZbxT.rim(context)),
                     ),
-                    keyboardType: TextInputType.url,
-                    textInputAction: TextInputAction.next,
-                    autocorrect: false,
-                    inputFormatters: [LengthLimitingTextInputFormatter(200)],
-                    onChanged: (_) => setState(() {}),
-                    validator: (v) {
-                      final value = (v ?? '').trim();
-                      if (value.isEmpty) return 'Server URL required';
-                      if (!value.startsWith('https://')) {
-                        return 'HTTPS is required (http:// is blocked).';
-                      }
-                      return null;
-                    },
-                    decoration: _fieldDeco(
-                      hint: 'https://your-relay.domain',
-                      icon: Icons.dns_outlined,
-                    ),
-                  ),
-                  if (_serverCtrl.text.trim().startsWith('http://')) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: _gold.withValues(alpha: 0.35)),
-                      ),
-                      child: const Text(
-                        'Insecure URL detected. Use HTTPS to protect credentials and tokens in transit.',
-                        style: TextStyle(fontSize: 11, color: _gold),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerLeft,
                     child: Text(
-                      'IP and port of your Zabbix relay server',
+                      '1) https://192.168.10.100:8443\n'
+                      '2) https://zabbix-mobile-backend.duckdns.org:8443\n'
+                      '3) https://tunnel.zabbix-ngp-mobile.net.eu.org:443',
                       style: TextStyle(
                         fontSize: 10,
                         color: ZbxT.textSec(context),
+                        fontFamily: 'monospace',
+                        height: 1.35,
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: ZbxT.card(context),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: ZbxT.rim(context)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'Reachability',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: ZbxT.textSec(context),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            if (_checkingRelays)
+                              const SizedBox(
+                                width: 10,
+                                height: 10,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.4,
+                                  color: _rxBlue,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        ..._relayStatus.map((s) {
+                          final ok = s['reachable'] == true;
+                          final url = (s['url'] ?? '').toString();
+                          final name = (s['name'] ?? '').toString();
+          final active = url == _loginController.currentBaseUrl;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    color: ok ? _txGreen : _downRed,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '$name: ${ok ? 'reachable' : 'unreachable'}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: ZbxT.textSec(context),
+                                    ),
+                                  ),
+                                ),
+                                if (active)
+                                  const Text(
+                                    'ACTIVE',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      color: _rxBlue,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        }),
+                        if (_relayStatus.isEmpty && !_checkingRelays)
+                          Text(
+                            'No status yet',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: ZbxT.textSec(context),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -440,56 +506,6 @@ class _LoginScreenState extends State<LoginScreen>
                     ],
                   ),
                   const SizedBox(height: 12),
-
-                  // ── Self-signed certificate toggle ───────────────────────────
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: Checkbox(
-                          value: _allowSelfSigned,
-                          onChanged: (v) => _toggleSelfSigned(v ?? false),
-                          activeColor: _rxBlue,
-                          checkColor: Colors.white,
-                          side: BorderSide(
-                            color: ZbxT.textSec(context),
-                            width: 1.5,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Allow self-signed certificate',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: ZbxT.textSec(context),
-                              ),
-                            ),
-                            if (_allowSelfSigned)
-                              const Padding(
-                                padding: EdgeInsets.only(top: 3),
-                                child: Text(
-                                  'Trust bypassed for configured host only.',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Color(0xFFFFB300),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
 
                   const SizedBox(height: 28),
                   SizedBox(
@@ -676,7 +692,7 @@ class _LoginScreenState extends State<LoginScreen>
         ),
         const SizedBox(height: 8),
         Text(
-          'v1.0  •  ${ApiClient.baseUrl}',
+          'v1.0  •  ${_apiInfo.baseUrl}',
           style: TextStyle(
             fontSize: 9,
             color: ZbxT.textSec(context).withValues(alpha: 0.5),
@@ -734,4 +750,10 @@ class _LoginScreenState extends State<LoginScreen>
       borderSide: const BorderSide(color: _downRed, width: 1.5),
     ),
   );
+}
+
+class _LoginFooterApiInfo {
+  final String baseUrl;
+
+  const _LoginFooterApiInfo(this.baseUrl);
 }

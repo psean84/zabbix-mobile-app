@@ -27,7 +27,7 @@ void main() async {
   final settings = AppSettings();
   await settings.load();
   ApiClient.setAllowSelfSignedCertificates(
-    settings.allowSelfSignedCertificates,
+    true,
   );
 
   runApp(MyApp(settings: settings));
@@ -65,6 +65,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.settings.addListener(_onSettings);
+    _onSettings();
     // Listen for 401 responses from any screen and force back to login
     _sessionExpiredSub = ApiClient.authErrorStream.listen((_) => _forceLogout());
     AppCache.instance.startConnectivityMonitor();
@@ -83,6 +84,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   void _onSettings() {
+    ApiClient.setAllowSelfSignedCertificates(
+      true,
+    );
+    ApiClient.setMetaCacheEnabled(widget.settings.metaCacheEnabled);
+    ApiClient.configureNetwork(
+      intranetUrl: widget.settings.intranetUrl,
+      internetUrl: widget.settings.internetUrl,
+      preferIntranet: widget.settings.preferIntranet,
+      autoSelect: widget.settings.autoSelectEndpoint,
+      timeoutSec: widget.settings.reachabilityTimeoutSec,
+      intervalMin: widget.settings.reachabilityIntervalMin,
+    );
     if (mounted) setState(() {});
   }
 

@@ -5,21 +5,10 @@ import '../../core/utils.dart';
 import '../../core/zbx_theme.dart';
 import 'interactive_line_graph.dart';
 
-// ─── Design tokens ─────────────────────────────────────────────────────────────
-const _rxBlue  = ZbxPalette.rxBlue;
-
-// ── Theme-aware color helper ──────────────────────────────────────────────────
-class _T {
-  static Color deep(BuildContext ctx)    => ZbxTheme.of(ctx).bgDeep;
-  static Color card(BuildContext ctx)    => ZbxTheme.of(ctx).bgCard;
-  static Color rim(BuildContext ctx)     => ZbxTheme.of(ctx).rim;
-  static Color textPri(BuildContext ctx) => ZbxTheme.of(ctx).textPri;
-  static Color textSec(BuildContext ctx) => ZbxTheme.of(ctx).textSec;
-}
+const _rxBlue = ZbxPalette.rxBlue;
 
 /// Standalone full-screen graph for a set of selected numeric items.
-/// Delegates entirely to [InteractiveLineGraph] so all preset chips,
-/// tooltip, axis scaling, and dark-mode colours are automatically correct.
+/// Delegates entirely to [InteractiveLineGraph].
 class PropertyGraphScreen extends StatefulWidget {
   final String hostName;
   final List<dynamic> items;
@@ -36,12 +25,11 @@ class PropertyGraphScreen extends StatefulWidget {
 
 class _PropertyGraphScreenState extends State<PropertyGraphScreen> {
   final _fromCtrl = TextEditingController();
-  final _toCtrl   = TextEditingController();
+  final _toCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    // Default to last 1 hour
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     _fromCtrl.text = formatDateTimeInput(
       DateTime.fromMillisecondsSinceEpoch((now - 3600) * 1000).toLocal(),
@@ -58,8 +46,7 @@ class _PropertyGraphScreenState extends State<PropertyGraphScreen> {
     super.dispose();
   }
 
-  List<dynamic> get _numericItems =>
-      widget.items.where(isNumericItem).toList();
+  List<dynamic> get _numericItems => widget.items.where(isNumericItem).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -67,32 +54,39 @@ class _PropertyGraphScreenState extends State<PropertyGraphScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: _T.deep(context),
+        backgroundColor: ZbxT.scaffold(context),
         appBar: AppBar(
-          backgroundColor: _T.card(context),
+          backgroundColor: ZbxT.card(context),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new,
-                size: 18, color: _T.textPri(context)),
+            icon: Icon(
+              Icons.arrow_back_ios_new,
+              size: 18,
+              color: ZbxT.textPri(context),
+            ),
             onPressed: () => Navigator.of(context).maybePop(),
           ),
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Properties Graph',
-                  style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: _T.textPri(context))),
-              Text(widget.hostName,
-                  style: TextStyle(
-                      fontSize: 11, color: _T.textSec(context))),
+              Text(
+                'Properties Graph',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: ZbxT.textPri(context),
+                ),
+              ),
+              Text(
+                widget.hostName,
+                style: TextStyle(fontSize: 11, color: ZbxT.textSec(context)),
+              ),
             ],
           ),
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(1),
-            child: Container(height: 1, color: _T.rim(context)),
+            child: Container(height: 1, color: ZbxT.rim(context)),
           ),
         ),
         body: _numericItems.isEmpty
@@ -100,7 +94,6 @@ class _PropertyGraphScreenState extends State<PropertyGraphScreen> {
             : ListView(
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 40),
                 children: [
-                  // Summary badge row
                   Wrap(
                     spacing: 8,
                     runSpacing: 6,
@@ -109,39 +102,40 @@ class _PropertyGraphScreenState extends State<PropertyGraphScreen> {
                           .toString()
                           .replaceAll(RegExp(r'\[.*?\]'), '')
                           .trim();
-                      final val  =
-                          (item['lastvalue'] ?? '—').toString();
-                      final unit =
-                          (item['units'] ?? '').toString();
+                      final value = (item['lastvalue'] ?? '-').toString();
+                      final unit = (item['units'] ?? '').toString();
                       return Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
                         decoration: BoxDecoration(
                           color: _rxBlue.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                              color: _rxBlue.withValues(alpha: 0.3)),
+                            color: _rxBlue.withValues(alpha: 0.3),
+                          ),
                         ),
                         child: Text(
-                          '$name: $val${unit.isNotEmpty ? ' $unit' : ''}',
+                          '$name: $value${unit.isNotEmpty ? ' $unit' : ''}',
                           style: TextStyle(
-                              fontSize: 11,
-                              color: _T.textPri(context),
-                              fontWeight: FontWeight.w600),
+                            fontSize: 11,
+                            color: ZbxT.textPri(context),
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       );
                     }).toList(),
                   ),
                   const SizedBox(height: 16),
-                  // Full graph with all controls delegated
                   InteractiveLineGraph(
                     selectedNumericItems: _numericItems,
                     externalFromController: _fromCtrl,
                     externalToController: _toCtrl,
                     showControls: true,
                     mode: GraphRenderMode.line,
-                    backgroundColor: _T.card(context),
-                    foregroundColor: _T.textPri(context),
+                    backgroundColor: ZbxT.card(context),
+                    foregroundColor: ZbxT.textPri(context),
                     chartHeight: 320,
                   ),
                 ],
@@ -150,23 +144,32 @@ class _PropertyGraphScreenState extends State<PropertyGraphScreen> {
     );
   }
 
-  Widget _buildEmpty(BuildContext context) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.show_chart,
+  Widget _buildEmpty(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.show_chart,
             size: 52,
-            color: _T.textSec(context).withValues(alpha: 0.4)),
-        const SizedBox(height: 14),
-        const Text('No numeric items to graph',
+            color: ZbxT.textSec(context).withValues(alpha: 0.4),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'No numeric items to graph',
             style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: _T.textSec(context))),
-        const SizedBox(height: 6),
-        const Text('Select items with numeric values first.',
-            style: TextStyle(fontSize: 12, color: _T.textSec(context))),
-      ],
-    ),
-  );
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: ZbxT.textSec(context),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Select items with numeric values first.',
+            style: TextStyle(fontSize: 12, color: ZbxT.textSec(context)),
+          ),
+        ],
+      ),
+    );
+  }
 }

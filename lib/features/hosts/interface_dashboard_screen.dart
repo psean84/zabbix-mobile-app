@@ -592,9 +592,9 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
       elevation: 0,
       leading: IconButton(
         icon: Icon(
-          Icons.arrow_back_ios_new,
+          Icons.arrow_back_ios_new_rounded,
           size: 18,
-          color: ZbxT.textPri(context),
+          color: _rxBlue,
         ),
         onPressed: () => Navigator.of(context).maybePop(),
       ),
@@ -736,7 +736,7 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 48),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 52),
       children: children,
     );
   }
@@ -880,26 +880,35 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 11,
-                    vertical: 5,
+                    horizontal: 14,
+                    vertical: 7,
                   ),
                   decoration: BoxDecoration(
                     color: active
-                        ? ZbxPalette.rxBlue.withValues(alpha: 0.18)
-                        : ZbxT.rim(context).withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(20),
+                        ? ZbxPalette.rxBlue
+                        : ZbxT.card(context),
+                    borderRadius: BorderRadius.circular(100),
                     border: Border.all(
-                      color: active ? ZbxPalette.rxBlue : ZbxT.rim(context),
-                      width: active ? 1.5 : 1,
+                      color: active
+                          ? ZbxPalette.rxBlue
+                          : ZbxT.rim(context),
+                      width: active ? 1.5 : 0.8,
                     ),
+                    boxShadow: active ? [
+                      BoxShadow(
+                        color: ZbxPalette.rxBlue.withValues(alpha: 0.25),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ] : null,
                   ),
                   child: Text(
                     label,
                     style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                       color: active
-                          ? ZbxPalette.rxBlue
+                          ? Colors.white
                           : ZbxT.textSec(context),
                     ),
                   ),
@@ -920,9 +929,13 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
   }
 
   Widget _legendDot(Color c) => Container(
-    width: 8,
-    height: 8,
-    decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+    width: 9,
+    height: 9,
+    decoration: BoxDecoration(
+      color: c,
+      shape: BoxShape.circle,
+      boxShadow: [BoxShadow(color: c.withValues(alpha: 0.4), blurRadius: 4)],
+    ),
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -974,76 +987,84 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
       Container(
         decoration: BoxDecoration(
           color: ZbxT.card(context),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: ZbxT.rim(context)),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: ZbxT.rim(context), width: 0.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: _items.asMap().entries.map((e) {
-            final item = e.value;
-            final isLast = e.key == _items.length - 1;
-            // Use Zabbix item name directly — no Rx/Tx remapping
-            final name = (item['name'] ?? item['key_'] ?? 'Unknown')
-                .toString()
-                .replaceAll(RegExp(r'\[.*?\]'), '')
-                .trim();
-            final rawVal = (item['lastvalue'] ?? '—').toString().trim();
-            final units = (item['units'] ?? '').toString().trim();
-            final display = units.isEmpty ? rawVal : '$rawVal $units';
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: _items.asMap().entries.map((e) {
+              final item = e.value;
+              final isLast = e.key == _items.length - 1;
+              final name = (item['name'] ?? item['key_'] ?? 'Unknown')
+                  .toString()
+                  .replaceAll(RegExp(r'\[.*?\]'), '')
+                  .trim();
+              final rawVal = (item['lastvalue'] ?? '—').toString().trim();
+              final units = (item['units'] ?? '').toString().trim();
+              final display = units.isEmpty ? rawVal : '$rawVal $units';
 
-            // Colour-code value: try numeric first
-            Color valColor = ZbxT.textMono(context);
-            if (rawVal.toLowerCase() == 'up' || rawVal == '1') {
-              valColor = _upGreen;
-            }
-            if (rawVal.toLowerCase() == 'down' || rawVal == '0') {
-              valColor = _downRed;
-            }
+              Color valColor = ZbxT.textMono(context);
+              if (rawVal.toLowerCase() == 'up' || rawVal == '1') {
+                valColor = _upGreen;
+              }
+              if (rawVal.toLowerCase() == 'down' || rawVal == '0') {
+                valColor = _downRed;
+              }
 
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 9,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 3,
-                        height: 18,
-                        margin: const EdgeInsets.only(right: 10, top: 1),
-                        decoration: BoxDecoration(
-                          color: valColor.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: ZbxT.textMono(context),
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 11,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          margin: const EdgeInsets.only(right: 12),
+                          decoration: BoxDecoration(
+                            color: valColor,
+                            shape: BoxShape.circle,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        display,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: valColor,
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: ZbxT.textMono(context),
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Text(
+                          display,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: valColor,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                if (!isLast) Container(height: 1, color: ZbxT.rim(context)),
-              ],
-            );
-          }).toList(),
+                  if (!isLast) Container(height: 0.5, color: ZbxT.rim(context)),
+                ],
+              );
+            }).toList(),
+          ),
         ),
       ),
     );
@@ -1308,12 +1329,19 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
 
           widgets.add(
             Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(14),
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: ZbxT.card(context),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: ZbxT.rim(context)),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: ZbxT.rim(context), width: 0.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1344,11 +1372,11 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
                   ),
                   const SizedBox(height: 8),
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(8),
                     child: LinearProgressIndicator(
                       value: usedPct != null ? pct / 100 : 0,
-                      minHeight: 7,
-                      backgroundColor: ZbxT.rim(context),
+                      minHeight: 8,
+                      backgroundColor: barColor.withValues(alpha: 0.10),
                       valueColor: AlwaysStoppedAnimation<Color>(barColor),
                     ),
                   ),
@@ -1456,11 +1484,18 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
       widgets.add(const SizedBox(height: 10));
       widgets.add(
         Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: ZbxT.card(context),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: ZbxT.rim(context)),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: ZbxT.rim(context), width: 0.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1486,11 +1521,11 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
               if (usedPct != null) ...[
                 const SizedBox(height: 8),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(8),
                   child: LinearProgressIndicator(
                     value: usedPct / 100,
-                    minHeight: 7,
-                    backgroundColor: ZbxT.rim(context),
+                    minHeight: 8,
+                    backgroundColor: barColor.withValues(alpha: 0.10),
                     valueColor: AlwaysStoppedAnimation<Color>(barColor),
                   ),
                 ),
@@ -1541,32 +1576,46 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
 
   Widget _buildGaugeTile(String label, String valueStr, double fraction, Color color, IconData icon) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: ZbxT.card(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ZbxT.rim(context)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ZbxT.rim(context), width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 13, color: ZbxT.textSec(context)),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(label, style: TextStyle(fontSize: 11, color: ZbxT.textSec(context))),
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 13, color: color),
               ),
-              Text(valueStr, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(label, style: TextStyle(fontSize: 12, color: ZbxT.textSec(context))),
+              ),
+              Text(valueStr, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
             ],
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 10),
           ClipRRect(
-            borderRadius: BorderRadius.circular(3),
+            borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
               value: fraction.clamp(0.0, 1.0),
-              minHeight: 5,
-              backgroundColor: ZbxT.rim(context),
+              minHeight: 7,
+              backgroundColor: color.withValues(alpha: 0.10),
               valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
           ),
@@ -1577,18 +1626,32 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
 
   Widget _buildStatTile(String label, String valueStr, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: ZbxT.card(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ZbxT.rim(context)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ZbxT.rim(context), width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          Icon(icon, size: 14, color: ZbxT.textSec(context)),
-          const SizedBox(width: 8),
-          Expanded(child: Text(label, style: TextStyle(fontSize: 11, color: ZbxT.textSec(context)))),
-          Text(valueStr, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+          Container(
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 14, color: color),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label, style: TextStyle(fontSize: 12, color: ZbxT.textSec(context)))),
+          Text(valueStr, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
         ],
       ),
     );
@@ -1599,51 +1662,61 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
     return Container(
       decoration: BoxDecoration(
         color: ZbxT.card(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ZbxT.rim(context)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ZbxT.rim(context), width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
-      child: Column(
-        children: items.asMap().entries.map((e) {
-          final item   = e.value;
-          final isLast = e.key == items.length - 1;
-          final name   = (item['name'] ?? item['key_'] ?? 'Unknown')
-              .toString()
-              .replaceAll(RegExp(r'\[.*?\]'), '')
-              .trim();
-          final rawVal = (item['lastvalue'] ?? '—').toString().trim();
-          final units  = (item['units'] ?? '').toString().trim();
-          final display = units.isEmpty ? rawVal : '$rawVal $units';
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Column(
+          children: items.asMap().entries.map((e) {
+            final item   = e.value;
+            final isLast = e.key == items.length - 1;
+            final name   = (item['name'] ?? item['key_'] ?? 'Unknown')
+                .toString()
+                .replaceAll(RegExp(r'\[.*?\]'), '')
+                .trim();
+            final rawVal = (item['lastvalue'] ?? '—').toString().trim();
+            final units  = (item['units'] ?? '').toString().trim();
+            final display = units.isEmpty ? rawVal : '$rawVal $units';
 
-          Color valColor = ZbxT.textMono(context);
-          if (rawVal.toLowerCase() == 'up' || rawVal == '1') valColor = _upGreen;
-          if (rawVal.toLowerCase() == 'down' || rawVal == '0') valColor = _downRed;
+            Color valColor = ZbxT.textMono(context);
+            if (rawVal.toLowerCase() == 'up' || rawVal == '1') valColor = _upGreen;
+            if (rawVal.toLowerCase() == 'down' || rawVal == '0') valColor = _downRed;
 
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 3,
-                      height: 18,
-                      margin: const EdgeInsets.only(right: 10, top: 1),
-                      decoration: BoxDecoration(
-                        color: valColor.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(2),
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        margin: const EdgeInsets.only(right: 12),
+                        decoration: BoxDecoration(
+                          color: valColor,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                    Expanded(child: Text(name, style: TextStyle(fontSize: 12, color: ZbxT.textMono(context)))),
-                    const SizedBox(width: 8),
-                    Text(display, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: valColor)),
-                  ],
+                      Expanded(child: Text(name, style: TextStyle(fontSize: 13, color: ZbxT.textMono(context)))),
+                      const SizedBox(width: 8),
+                      Text(display, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: valColor)),
+                    ],
+                  ),
                 ),
-              ),
-              if (!isLast) Container(height: 1, color: ZbxT.rim(context)),
-            ],
-          );
-        }).toList(),
+                if (!isLast) Container(height: 0.5, color: ZbxT.rim(context)),
+              ],
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -1937,59 +2010,91 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
     ],
   );
 
-  Widget _buildHostRow() => Row(
-    children: [
-      Container(
-        padding: const EdgeInsets.all(7),
-        decoration: BoxDecoration(
-          color: _rxBlue.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(Icons.dns_outlined, size: 14, color: _rxBlue),
-      ),
-      const SizedBox(width: 10),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.hostName,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: ZbxT.textPri(context),
-              ),
-            ),
-            Text(
-              widget.hostIp,
-              style: TextStyle(
-                fontSize: 11,
-                color: ZbxT.textMono(context),
-                fontFamily: 'monospace',
-              ),
-            ),
-          ],
-        ),
-      ),
-    ],
-  );
-
-  Widget _buildErrorBanner() => Container(
-    margin: const EdgeInsets.only(bottom: 10),
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  Widget _buildHostRow() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     decoration: BoxDecoration(
-      color: _downRed.withValues(alpha: 0.10),
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: _downRed.withValues(alpha: 0.3)),
+      color: ZbxT.card(context),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: ZbxT.rim(context), width: 0.5),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.04),
+          blurRadius: 10,
+          offset: const Offset(0, 3),
+        ),
+      ],
     ),
     child: Row(
       children: [
-        const Icon(Icons.error_outline, color: _downRed, size: 15),
-        const SizedBox(width: 8),
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: _rxBlue.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(Icons.dns_rounded, size: 18, color: _rxBlue),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.hostName,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: ZbxT.textPri(context),
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                widget.hostIp,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: ZbxT.textMono(context),
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildErrorBanner() => Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    decoration: BoxDecoration(
+      color: _downRed.withValues(alpha: 0.07),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _downRed.withValues(alpha: 0.20), width: 0.8),
+      boxShadow: [
+        BoxShadow(
+          color: _downRed.withValues(alpha: 0.06),
+          blurRadius: 10,
+          offset: const Offset(0, 3),
+        ),
+      ],
+    ),
+    child: Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: _downRed.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(Icons.error_outline_rounded, color: _downRed, size: 14),
+        ),
+        const SizedBox(width: 10),
         Expanded(
           child: Text(
             _error,
-            style: const TextStyle(fontSize: 11, color: _downRed),
+            style: const TextStyle(fontSize: 13, color: _downRed),
           ),
         ),
       ],
@@ -1997,16 +2102,30 @@ class _InterfaceDashboardScreenState extends State<InterfaceDashboardScreen>
   );
 
   Widget _buildNoData(String msg) => Container(
-    height: 60,
+    height: 70,
     alignment: Alignment.center,
     decoration: BoxDecoration(
       color: ZbxT.card(context),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: ZbxT.rim(context)),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: ZbxT.rim(context), width: 0.5),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.04),
+          blurRadius: 10,
+          offset: const Offset(0, 3),
+        ),
+      ],
     ),
-    child: Text(
-      msg,
-      style: TextStyle(fontSize: 11, color: ZbxT.textSec(context)),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.inbox_outlined, size: 22, color: ZbxT.textSec(context).withValues(alpha: 0.4)),
+        const SizedBox(height: 6),
+        Text(
+          msg,
+          style: TextStyle(fontSize: 12, color: ZbxT.textSec(context)),
+        ),
+      ],
     ),
   );
 
@@ -2088,11 +2207,18 @@ class _TrafficTileWithGauge extends StatelessWidget {
     final fraction = (pct ?? 0) / 100.0;
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: ZbxT.card(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: gaugeColor.withValues(alpha: 0.25)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: gaugeColor.withValues(alpha: 0.18), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: gaugeColor.withValues(alpha: 0.07),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -2343,8 +2469,8 @@ class _ErrBarChartState extends State<_ErrBarChart> {
                 color: v > 0 ? _downRed.withValues(alpha: 0.75) : rimColor,
                 width: (sorted.length < 20) ? 8 : 4,
                 borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(2),
-                  topRight: Radius.circular(2),
+                  topLeft: Radius.circular(5),
+                  topRight: Radius.circular(5),
                 ),
               ),
             ],
@@ -2762,8 +2888,15 @@ class _IcmpCombinedChartState extends State<_IcmpCombinedChart> {
       height: 300,
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ZbxT.rim(context)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ZbxT.rim(context), width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       padding: const EdgeInsets.fromLTRB(4, 14, 14, 8),
       child: LineChart(
@@ -2886,11 +3019,18 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
     decoration: BoxDecoration(
       color: ZbxT.card(context),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: color.withValues(alpha: 0.35)),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: color.withValues(alpha: 0.20), width: 0.8),
+      boxShadow: [
+        BoxShadow(
+          color: color.withValues(alpha: 0.08),
+          blurRadius: 12,
+          offset: const Offset(0, 3),
+        ),
+      ],
     ),
     child: Row(
       children: [
@@ -2901,19 +3041,20 @@ class _StatusPill extends StatelessWidget {
               Text(
                 label.toUpperCase(),
                 style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
                   color: ZbxT.textSec(context),
-                  letterSpacing: 0.8,
+                  letterSpacing: 0.6,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 5),
               Text(
                 status,
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
                   color: color,
+                  letterSpacing: -0.2,
                 ),
               ),
             ],
@@ -2926,7 +3067,11 @@ class _StatusPill extends StatelessWidget {
             color: color,
             shape: BoxShape.circle,
             boxShadow: [
-              BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 7),
+              BoxShadow(
+                color: color.withValues(alpha: 0.5),
+                blurRadius: 6,
+                spreadRadius: 1,
+              ),
             ],
           ),
         ),
@@ -2950,11 +3095,18 @@ class _MetricTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     width: fullWidth ? double.infinity : null,
-    padding: const EdgeInsets.all(14),
+    padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: ZbxT.card(context),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: color.withValues(alpha: 0.22)),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: color.withValues(alpha: 0.18), width: 0.8),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.05),
+          blurRadius: 12,
+          offset: const Offset(0, 4),
+        ),
+      ],
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2962,13 +3114,13 @@ class _MetricTile extends StatelessWidget {
         Text(
           label.toUpperCase(),
           style: TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
             color: ZbxT.textSec(context),
-            letterSpacing: 0.8,
+            letterSpacing: 0.4,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
@@ -3017,11 +3169,18 @@ class _PacketLossTile extends StatelessWidget {
     final String badge = n == 0 ? 'OK' : (n < 5 ? 'DEGRADED' : 'HIGH LOSS');
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: ZbxT.card(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: 0.18), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.07),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -3032,39 +3191,40 @@ class _PacketLossTile extends StatelessWidget {
                 Text(
                   'PACKET LOSS',
                   style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
                     color: ZbxT.textSec(context),
-                    letterSpacing: 0.8,
+                    letterSpacing: 0.4,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Text(
                   value,
                   style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
                     color: color,
                     height: 1,
+                    letterSpacing: -0.5,
                   ),
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: color.withValues(alpha: 0.4)),
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(color: color.withValues(alpha: 0.30), width: 0.8),
             ),
             child: Text(
               badge,
               style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
                 color: color,
-                letterSpacing: 0.6,
+                letterSpacing: 0.4,
               ),
             ),
           ),
@@ -3091,62 +3251,75 @@ class _CounterTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = count == 0 ? okColor : warnColor;
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: ZbxT.card(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: 0.18), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.07),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 11, color: color),
-              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 12, color: color),
+              ),
+              const SizedBox(width: 7),
               Text(
                 label.toUpperCase(),
                 style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  color: color,
-                  letterSpacing: 0.7,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: ZbxT.textSec(context),
+                  letterSpacing: 0.4,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 10),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
                 '$count',
                 style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
                   color: color,
                   height: 1,
+                  letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(width: 7),
+              const SizedBox(width: 8),
               Padding(
-                padding: const EdgeInsets.only(bottom: 2),
+                padding: const EdgeInsets.only(bottom: 3),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 2,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(5),
+                    color: color.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(100),
+                    border: Border.all(color: color.withValues(alpha: 0.25), width: 0.8),
                   ),
                   child: Text(
                     count == 0 ? 'OK' : 'ALERT',
                     style: TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
                       color: color,
-                      letterSpacing: 0.5,
+                      letterSpacing: 0.3,
                     ),
                   ),
                 ),
@@ -3176,23 +3349,31 @@ class _PEMetaTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: ZbxT.card(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.22)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.18), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(7),
-            margin: const EdgeInsets.only(right: 12, top: 1),
+            width: 40,
+            height: 40,
+            margin: const EdgeInsets.only(right: 14),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, size: 15, color: color),
+            child: Icon(icon, size: 18, color: color),
           ),
           Expanded(
             child: Column(
@@ -3201,20 +3382,21 @@ class _PEMetaTile extends StatelessWidget {
                 Text(
                   label.toUpperCase(),
                   style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
                     color: color.withValues(alpha: 0.8),
-                    letterSpacing: 0.8,
+                    letterSpacing: 0.5,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   value,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: ZbxT.textPri(context),
                     height: 1.3,
+                    letterSpacing: -0.1,
                   ),
                 ),
               ],
@@ -3249,8 +3431,15 @@ class _ArpCardState extends State<_ArpCard> {
     return Container(
       decoration: BoxDecoration(
         color: ZbxT.card(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: ZbxT.rim(context)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ZbxT.rim(context), width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -3260,12 +3449,12 @@ class _ArpCardState extends State<_ArpCard> {
           title: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: _rxBlue.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
+                  color: _rxBlue.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.radar, size: 13, color: _rxBlue),
+                child: const Icon(Icons.radar, size: 14, color: _rxBlue),
               ),
               const SizedBox(width: 10),
               Text(
@@ -3279,18 +3468,19 @@ class _ArpCardState extends State<_ArpCard> {
             ],
           ),
           trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
-              color: _rxBlue.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _rxBlue.withValues(alpha: 0.4)),
+              color: _rxBlue.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(color: _rxBlue.withValues(alpha: 0.25), width: 0.8),
             ),
             child: Text(
               '${widget.count}',
               style: const TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
                 color: _rxBlue,
+                letterSpacing: -0.3,
               ),
             ),
           ),
@@ -3320,15 +3510,15 @@ class _ArpCardState extends State<_ArpCard> {
                     vertical: 7,
                   ),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: ZbxT.rim(context)),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: ZbxT.rim(context), width: 0.8),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: ZbxT.rim(context)),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: ZbxT.rim(context), width: 0.8),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                     borderSide: const BorderSide(color: _rxBlue, width: 1.5),
                   ),
                 ),
@@ -3373,10 +3563,10 @@ class _ArpCardState extends State<_ArpCard> {
                 child: Row(
                   children: [
                     Container(
-                      width: 4,
-                      height: 4,
+                      width: 5,
+                      height: 5,
                       margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: _rxBlue,
                         shape: BoxShape.circle,
                       ),

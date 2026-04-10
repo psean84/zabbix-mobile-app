@@ -572,20 +572,22 @@ class _HostsScreenState extends State<HostsScreen> {
     setState(() => _loadingItems[hid] = true);
 
     try {
+      List<dynamic> items = [];
+      try { items = await ApiClient.fetchItemsMetadata(hid, cacheOnly: true); } catch (_) {}
+      if (items.isNotEmpty && mounted && _hostSeq[hid] == seq) _processItems(hid, items);
+
       final isNet = _isNetworkGroup(_expandedGroupName);
       List<dynamic> all;
       if (isNet) {
         all = await ApiClient.fetchItems(hid);
         if (all.isEmpty) all = _wrapLld(await ApiClient.fetchLldRules(hid));
       } else {
-        try {
-          all = await ApiClient.fetchItems(hid);
-        } catch (_) { all = []; }
+        try { all = await ApiClient.fetchItems(hid); } catch (_) { all = []; }
         if (all.isEmpty) all = _wrapLld(await ApiClient.fetchLldRules(hid));
       }
 
       if (!mounted || _hostSeq[hid] != seq) return;
-      _processItems(hid, all, updateSearchBlob: true);
+      _processItems(hid, all);
       setState(() => _loadingItems[hid] = false);
     } catch (_) {
       if (!mounted) return;
@@ -601,11 +603,7 @@ class _HostsScreenState extends State<HostsScreen> {
     });
   }
 
-  void _processItems(
-    String hid,
-    List<dynamic> items, {
-    bool updateSearchBlob = true,
-  }) {
+  void _processItems(String hid, List<dynamic> items) {
     final isSr = _isBngSrHost(hid);
     final nm = <String, List<dynamic>>{};
     final sm = <String, List<dynamic>>{};
@@ -619,11 +617,9 @@ class _HostsScreenState extends State<HostsScreen> {
       }
       all.putIfAbsent(entity, () => []).add(item);
     }
-    if (updateSearchBlob) {
-      final sb = StringBuffer();
-      for (final i in items) sb.write(' ${i['name'] ?? ''} ${i['key_'] ?? ''}');
-      _hostMetaBlob[hid] = sb.toString();
-    }
+    final sb = StringBuffer();
+    for (final i in items) sb.write(' ${i['name'] ?? ''} ${i['key_'] ?? ''}');
+    _hostMetaBlob[hid] = sb.toString();
     if (mounted) setState(() {
       _itemsForHost[hid]          = items;
       _sapEntitiesForHost[hid]    = sm;
@@ -809,205 +805,6 @@ class _HostsScreenState extends State<HostsScreen> {
         preloadedItems: items, interfaceOrder: order, interfaceItemsByName: map,
       ),
     ));
-  }
-
-  // ── Interface card builder ─────────────────────────────────────────────────
-  /// Builds [InterfaceCardData] from the entity map.
-  ///
-  /// Each interface group contains multiple LLD-discovered items. The anchor
-  /// item is  net.if.intip[#IFNAME]  — its Zabbix **item tags** carry the
-  /// metadata fields (tag key → value):
-  ///
-  ///   LCID        → card.lcid
-  ///   Description → card.description
-  ///   QoS         → card.qos
-  ///   BW          → card.speed  (bandwidth label, e.g. "10G")
-  ///
-  /// Other items in the group supply operational telemetry:
-  ///   net.if.rx_bps[#IFNAME]   → inbound Mbps
-  ///   net.if.tx_bps[#IFNAME]   → outbound Mbps
-  ///   sap.if.rx_bytes[#SAPID]  → inbound bps (converted to Mbps)
-  ///   sap.if.tx_bytes[#SAPID]  → outbound bps (converted to Mbps)
-  ///   net.if.in_util[#IFNAME]  → inbound %
-  ///   net.if.out_util[#IFNAME] → outbound %
-  ///   net.if.admin[#IFNAME]    → admin status (1 = up)
-  ///   net.if.oper[#IFNAME]     → line protocol / operational status (1 = up)
-  List<InterfaceCardData> _buildInterfaceCards(
-    Map<String, List<dynamic>> entityMap, {
-    bool trafficOnly = false,
-  }) {
-    final cards = <InterfaceCardData>[];
-
-    // Normalize entity buckets so metrics like "...[ifname,in]" and
-    // "...[ifname,out]" are merged under one interface card.
-    final normalizedEntityMap = <String, List<dynamic>>{};
-    for (final entry in entityMap.entries) {
-      final normalized = _normalizeInterfaceEntityName(entry.key);
-      normalizedEntityMap.putIfAbsent(normalized, () => []).addAll(entry.value);
-    }
-
-    for (final entry in normalizedEntityMap.entries) {
-      final ifName = entry.key;
-      final items  = entry.value;
-
-      String? lcid, description, qos, speed;
-      double inBps = 0, outBps = 0, inPct = 0, outPct = 0;
-      bool? adminUp;
-      bool? operUp;
-      int? latestClock;
-
-      for (final item in items) {
-        final key       = (item['key_']      ?? '').toString();
-        final keyLower  = key.toLowerCase();
-        final lastvalue = (item['lastvalue'] ?? '').toString().trim();
-        final lastclock = int.tryParse((item['lastclock'] ?? '').toString()) ?? 0;
-
-        if (lastclock > (latestClock ?? 0)) latestClock = lastclock;
-
-        // ── net.if.intip[#IFNAME] ──────────────────────────────────────────
-        // Anchor item — LCID / Description / QoS / BW live in item-level tags:
-        // [{tag: 'LCID', value: '10234'}, {tag: 'Description', value: '…'}, …]
-        if (keyLower.startsWith('net.if.intip[')) {
-          final rawTags = item['tags'];
-          if (rawTags is List) {
-            for (final t in rawTags) {
-              final tk = (t['tag']   ?? '').toString().trim();
-              final tv = (t['value'] ?? '').toString().trim();
-              if (tv.isEmpty) continue;
-              switch (tk.toLowerCase()) {
-                case 'lcid':        lcid        = tv; break;
-                case 'description': description = tv; break;
-                case 'qos':         qos         = tv; break;
-                case 'bw':          speed       = tv; break;
-              }
-            }
-          }
-          continue;
-        }
-
-        // ── Interface status ───────────────────────────────────────────────
-        if (keyLower.startsWith('net.if.admin[') ||
-            keyLower.startsWith('sap.if.admin[')) {
-          final parsed = _parseInterfaceStatus(lastvalue);
-          if (parsed != null) {
-            adminUp = parsed;
-          }
-          continue;
-        }
-        if (keyLower.startsWith('net.if.oper[') ||
-            keyLower.startsWith('sap.if.oper[') ||
-            keyLower.contains('ifoperstatus')) {
-          final parsed = _parseInterfaceStatus(lastvalue);
-          if (parsed != null) {
-            operUp = parsed;
-          }
-          continue;
-        }
-
-        // ── Inbound traffic (bits/s → Mbps) ───────────────────────────────
-        if (keyLower.startsWith('net.if.rx_bps[')) {
-          inBps = (double.tryParse(lastvalue) ?? 0) / 1e6;
-          continue;
-        }
-        if (keyLower.startsWith('sap.if.rx_bytes[')) {
-          // SAP keys are provided in bps, convert to Mbps for card model.
-          inBps = (double.tryParse(lastvalue) ?? 0) / 1e6;
-          continue;
-        }
-
-        // ── Outbound traffic (bits/s → Mbps) ──────────────────────────────
-        if (keyLower.startsWith('net.if.tx_bps[')) {
-          outBps = (double.tryParse(lastvalue) ?? 0) / 1e6;
-          continue;
-        }
-        if (keyLower.startsWith('sap.if.tx_bytes[')) {
-          // SAP keys are provided in bps, convert to Mbps for card model.
-          outBps = (double.tryParse(lastvalue) ?? 0) / 1e6;
-          continue;
-        }
-
-        // ── Utilisation % ──────────────────────────────────────────────────
-        if (keyLower.startsWith('net.if.in_util[') ||
-            keyLower.startsWith('sap.if.in_util[')) {
-          inPct = double.tryParse(lastvalue) ?? 0;
-          continue;
-        }
-        if (keyLower.startsWith('net.if.out_util[') ||
-            keyLower.startsWith('sap.if.out_util[')) {
-          outPct = double.tryParse(lastvalue) ?? 0;
-          continue;
-        }
-      }
-
-      // Prefer operational status if available; if both exist, require both UP.
-      final bool isActive;
-      if (operUp != null && adminUp != null) {
-        isActive = operUp && adminUp;
-      } else if (operUp != null) {
-        isActive = operUp;
-      } else if (adminUp != null) {
-        isActive = adminUp;
-      } else {
-        // No status datapoints available for this interface.
-        isActive = true;
-      }
-
-      // ── "Updated X ago" ───────────────────────────────────────────────────
-      final String updatedAgo;
-      if (latestClock != null && latestClock > 0) {
-        final diff = DateTime.now()
-            .difference(DateTime.fromMillisecondsSinceEpoch(latestClock * 1000));
-        if (diff.inSeconds < 60)      updatedAgo = '${diff.inSeconds}s ago';
-        else if (diff.inMinutes < 60) updatedAgo = '${diff.inMinutes}m ago';
-        else                          updatedAgo = '${diff.inHours}h ago';
-      } else {
-        updatedAgo = '—';
-      }
-
-      cards.add(InterfaceCardData(
-        name:        ifName,
-        isActive:    isActive,
-        speed:       speed ?? '—',
-        inBps:       inBps,
-        outBps:      outBps,
-        inPct:       inPct,
-        outPct:      outPct,
-        description: description,
-        lcid:        lcid,
-        qos:         qos,
-        updatedAgo:  updatedAgo,
-        trafficOnly: trafficOnly,
-      ));
-    }
-
-    cards.sort((a, b) => a.name.compareTo(b.name));
-    return cards;
-  }
-
-  String _normalizeInterfaceEntityName(String raw) {
-    final v = raw.trim();
-    if (v.isEmpty) return v;
-    final comma = v.indexOf(',');
-    return comma > 0 ? v.substring(0, comma).trim() : v;
-  }
-
-  bool? _parseInterfaceStatus(String raw) {
-    final v = raw.trim().toLowerCase();
-    if (v.isEmpty) return null;
-
-    // Numeric forms from SNMP/Zabbix (e.g. "1", "2", "1.0000")
-    final n = double.tryParse(v);
-    if (n != null) {
-      return n.round() == 1;
-    }
-
-    // Textual forms from transformed/proxy values.
-    if (v.contains('up') || v.contains('active') || v == 'ok') return true;
-    if (v.contains('down') || v.contains('inactive') || v == 'critical') {
-      return false;
-    }
-
-    return null;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -1544,16 +1341,19 @@ class _HostsScreenState extends State<HostsScreen> {
         else ...[
           InterfaceListSection(
             title: 'SAP INTERFACES',
-            subtitle: name,
-            interfaces: _buildInterfaceCards(map, trafficOnly: true),
-            discoveredCount: sapIds.length,
+            interfaceNames: sapIds,
+            itemsByName: map,
             accentColor: ZbxPalette.txGreen,
-            onTap: (card) => _openIf(
+            titleColor: ZbxPalette.txGreen,
+            icon: Icons.hub_outlined,
+            iconSize: 17,
+            headerPadding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
+            onTap: (ifName, items) => _openIf(
               hid: hid,
               hname: name,
               hip: ip,
-              ifName: card.name,
-              items: map[card.name] ?? const [],
+              ifName: ifName,
+              items: items,
               order: sapIds,
               map: map,
               isSap: true,
@@ -2460,16 +2260,18 @@ class _HostsScreenState extends State<HostsScreen> {
         else ...[
           InterfaceListSection(
             title: 'INTERFACES',
-            subtitle: (host['name'] ?? host['host'] ?? '').toString(),
-            interfaces: _buildInterfaceCards(map),
-            discoveredCount: keys.length,
+            interfaceNames: keys,
+            itemsByName: map,
             accentColor: gc,
-            onTap: (card) => _openIf(
+            icon: Icons.settings_ethernet,
+            iconSize: 17,
+            headerPadding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
+            onTap: (ifName, items) => _openIf(
               hid: hid,
               hname: (host['name'] ?? host['host'] ?? '').toString(),
               hip: extractIp(host),
-              ifName: card.name,
-              items: map[card.name] ?? const [],
+              ifName: ifName,
+              items: items,
               order: keys,
               map: map,
             ),
@@ -2811,17 +2613,19 @@ class _HostsScreenState extends State<HostsScreen> {
         if (sks.isNotEmpty) ...[
           InterfaceListSection(
             title: 'SAP INTERFACES',
-            subtitle: hname,
-            interfaces: _buildInterfaceCards(sm, trafficOnly: true),
-            discoveredCount: sks.length,
+            interfaceNames: sks,
+            itemsByName: sm,
             accentColor: ZbxPalette.txGreen,
+            titleColor: ZbxPalette.txGreen,
+            icon: Icons.hub_outlined,
             maxItems: 12,
-            onTap: (card) => _openIf(
+            overflowLabel: '+ ${sks.length - 12} more SAP interfaces',
+            onTap: (ifName, items) => _openIf(
               hid: hid,
               hname: hname,
               hip: hip,
-              ifName: card.name,
-              items: sm[card.name] ?? const [],
+              ifName: ifName,
+              items: items,
               order: sks,
               map: sm,
               isSap: true,
@@ -2833,16 +2637,18 @@ class _HostsScreenState extends State<HostsScreen> {
         if (nks.isNotEmpty) ...[
           InterfaceListSection(
             title: 'INTERFACES',
-            subtitle: hname,
-            interfaces: _buildInterfaceCards(nm),
-            discoveredCount: nks.length,
+            interfaceNames: nks,
+            itemsByName: nm,
             accentColor: gc,
-            onTap: (card) => _openIf(
+            icon: Icons.settings_ethernet,
+            maxItems: 20,
+            overflowLabel: '+ ${nks.length - 20} more interfaces',
+            onTap: (ifName, items) => _openIf(
               hid: hid,
               hname: hname,
               hip: hip,
-              ifName: card.name,
-              items: nm[card.name] ?? const [],
+              ifName: ifName,
+              items: items,
               order: nks,
               map: nm,
             ),

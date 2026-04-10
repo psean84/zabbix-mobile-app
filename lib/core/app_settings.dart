@@ -213,7 +213,15 @@ class AppSettings extends ChangeNotifier {
   AppThemeMode _themeMode = AppThemeMode.dark;
   NotifFilter _notifFilter = NotifFilter();
   bool _rememberMe = true;
-  bool _allowSelfSignedCertificates = false;
+  bool _allowSelfSignedCertificates = true;
+  bool _autoSelectEndpoint = true;
+  bool _preferIntranet = true;
+  String _intranetUrl = 'https://192.168.10.100:8443';
+  String _internetUrl = 'https://zabbix-mobile-backend.duckdns.org:8443';
+  String _tunnelUrl = 'https://tunnel.zabbix-ngp-mobile.net.eu.org:443';
+  int _reachabilityTimeoutSec = 2;
+  int _reachabilityIntervalMin = 5;
+  bool _metaCacheEnabled = true;
   bool _loaded = false;
 
   AppColorScheme get colorScheme => _colorScheme;
@@ -222,6 +230,14 @@ class AppSettings extends ChangeNotifier {
   NotifFilter get notifFilter => _notifFilter;
   bool get rememberMe => _rememberMe;
   bool get allowSelfSignedCertificates => _allowSelfSignedCertificates;
+  bool get autoSelectEndpoint => _autoSelectEndpoint;
+  bool get preferIntranet => _preferIntranet;
+  String get intranetUrl => _intranetUrl;
+  String get internetUrl => _internetUrl;
+  String get tunnelUrl => _tunnelUrl;
+  int get reachabilityTimeoutSec => _reachabilityTimeoutSec;
+  int get reachabilityIntervalMin => _reachabilityIntervalMin;
+  bool get metaCacheEnabled => _metaCacheEnabled;
   bool get loaded => _loaded;
 
   Future<void> load() async {
@@ -239,7 +255,18 @@ class AppSettings extends ChangeNotifier {
             AppThemeMode.values[ti.clamp(0, AppThemeMode.values.length - 1)];
         _rememberMe = raw['rememberMe'] as bool? ?? true;
         _allowSelfSignedCertificates =
-            raw['allowSelfSignedCertificates'] as bool? ?? false;
+            raw['allowSelfSignedCertificates'] as bool? ?? true;
+        _autoSelectEndpoint = raw['autoSelectEndpoint'] as bool? ?? true;
+        _preferIntranet = raw['preferIntranet'] as bool? ?? true;
+        // Relay endpoints are fixed by app policy.
+        _intranetUrl = 'https://192.168.10.100:8443';
+        _internetUrl = 'https://zabbix-mobile-backend.duckdns.org:8443';
+        _tunnelUrl = 'https://tunnel.zabbix-ngp-mobile.net.eu.org:443';
+        _reachabilityTimeoutSec =
+            ((raw['reachTimeoutSec'] as num?)?.toInt() ?? 2).clamp(1, 2);
+        _reachabilityIntervalMin =
+            ((raw['reachIntervalMin'] as num?)?.toInt() ?? 5).clamp(1, 60);
+        _metaCacheEnabled = raw['metaCacheEnabled'] as bool? ?? true;
         if (raw['notifFilter'] is Map<String, dynamic>) {
           _notifFilter = NotifFilter.fromJson(
             raw['notifFilter'] as Map<String, dynamic>,
@@ -258,8 +285,54 @@ class AppSettings extends ChangeNotifier {
       'themeMode': _themeMode.index,
       'rememberMe': _rememberMe,
       'allowSelfSignedCertificates': _allowSelfSignedCertificates,
+      'autoSelectEndpoint': _autoSelectEndpoint,
+      'preferIntranet': _preferIntranet,
+      'intranetUrl': _intranetUrl,
+      'internetUrl': _internetUrl,
+      'tunnelUrl': _tunnelUrl,
+      'reachTimeoutSec': _reachabilityTimeoutSec,
+      'reachIntervalMin': _reachabilityIntervalMin,
+      'metaCacheEnabled': _metaCacheEnabled,
       'notifFilter': _notifFilter.toJson(),
     });
+  }
+
+  String _cleanUrl(String url) {
+    var clean = url.trim();
+    if (clean.isEmpty) return '';
+    if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+      clean = 'https://$clean';
+    }
+    clean = clean.replaceAll(RegExp(r'/$'), '');
+    return clean;
+  }
+
+  Future<void> setNetworkPrefs({
+    String? intranetUrl,
+    String? internetUrl,
+    bool? preferIntranet,
+    bool? autoSelectEndpoint,
+    int? reachTimeoutSec,
+    int? reachIntervalMin,
+  }) async {
+    if (intranetUrl != null) {
+      final clean = _cleanUrl(intranetUrl);
+      if (clean.isNotEmpty) _intranetUrl = clean;
+    }
+    if (internetUrl != null) {
+      final clean = _cleanUrl(internetUrl);
+      if (clean.isNotEmpty) _internetUrl = clean;
+    }
+    if (preferIntranet != null) _preferIntranet = preferIntranet;
+    if (autoSelectEndpoint != null) _autoSelectEndpoint = autoSelectEndpoint;
+    if (reachTimeoutSec != null) {
+      _reachabilityTimeoutSec = reachTimeoutSec.clamp(1, 2);
+    }
+    if (reachIntervalMin != null) {
+      _reachabilityIntervalMin = reachIntervalMin.clamp(1, 60);
+    }
+    notifyListeners();
+    await _save();
   }
 
   Future<void> setColorScheme(AppColorScheme s) async {
@@ -297,6 +370,13 @@ class AppSettings extends ChangeNotifier {
 
   Future<void> setNotifFilter(NotifFilter f) async {
     _notifFilter = f;
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> setMetaCacheEnabled(bool v) async {
+    if (_metaCacheEnabled == v) return;
+    _metaCacheEnabled = v;
     notifyListeners();
     await _save();
   }

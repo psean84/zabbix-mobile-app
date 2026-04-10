@@ -78,6 +78,7 @@ class ZbxTheme {
 /// `ZbxT.card(ctx)`, `ZbxT.textPri(ctx)`, etc.
 class ZbxT {
   const ZbxT._();
+  static Color scaffold(BuildContext ctx) => ZbxTheme.of(ctx).scaffold;
   static Color card(BuildContext ctx)     => ZbxTheme.of(ctx).bgCard;
   static Color lift(BuildContext ctx)     => ZbxTheme.of(ctx).bgLift;
   static Color panel(BuildContext ctx)    => ZbxTheme.of(ctx).bgPanel;

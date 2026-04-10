@@ -55,8 +55,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late Set<String> _hosts;
   late Set<String> _vrfs;
   late Set<String> _customers;
-  bool _allowSelfSigned = false;
   String _grpSearch = '', _hostSearch = '', _vrfSearch = '';
+  int _cacheFiles = 0;
+  int _cacheBytes = 0;
+  bool _cacheStatsLoading = false;
 
   @override
   void initState() {
@@ -67,7 +69,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _hosts = Set.from(f.hosts);
     _vrfs = Set.from(f.vrfs);
     _customers = Set.from(f.customers);
-    _allowSelfSigned = widget.settings.allowSelfSignedCertificates;
     AppCache.instance.addListener(_r);
   }
 
@@ -79,6 +80,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _r() {
     if (mounted) setState(() {});
+  }
+
+  String _fmtBytes(int bytes) {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    var d = bytes.toDouble();
+    var i = 0;
+    while (d >= 1024 && i < units.length - 1) {
+      d /= 1024;
+      i++;
+    }
+    final fixed = d >= 100 ? 0 : d >= 10 ? 1 : 2;
+    return '${d.toStringAsFixed(fixed)} ${units[i]}';
+  }
+
+  Future<void> _loadCacheStats() async {
+    if (_cacheStatsLoading) return;
+    setState(() => _cacheStatsLoading = true);
+    try {
+      final s = await LocalStore.statsByPrefix(const ['meta:', 'bng:']);
+      if (!mounted) return;
+      setState(() {
+        _cacheFiles = s['files'] ?? 0;
+        _cacheBytes = s['bytes'] ?? 0;
+      });
+    } finally {
+      if (mounted) setState(() => _cacheStatsLoading = false);
+    }
+  }
+
+  Future<void> _clearLocalCache() async {
+    final n = await LocalStore.clearByPrefix(const ['meta:', 'bng:']);
+    await _loadCacheStats();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Cleared $n cached entries.'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   List<String> get _allGroups =>
@@ -131,16 +171,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       customers: Set.from(_customers),
     );
     await widget.settings.setNotifFilter(f);
+    var synced = true;
     try {
       final s = await LocalStore.readMap('fcm:token');
       final t = (s?['token'] ?? '').toString();
       if (t.isNotEmpty) await ApiClient.updateDeviceFilter(t, f.toJson());
-    } catch (_) {}
+    } catch (_) {
+      synced = false;
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Filter saved & synced'),
-        backgroundColor: _txGreen,
+        content: Text(
+          synced
+              ? 'Filter saved & synced'
+              : 'Filter saved locally (sync pending)',
+        ),
+        backgroundColor: synced ? _txGreen : _warnAmb,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -148,27 +195,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _setAllowSelfSigned(bool value) async {
-    setState(() => _allowSelfSigned = value);
-    await widget.settings.setAllowSelfSignedCertificates(value);
-    ApiClient.setAllowSelfSignedCertificates(value);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          value
-              ? 'Self-signed TLS enabled for this app session.'
-              : 'Strict TLS validation restored.',
-        ),
-        backgroundColor: value ? _warnAmb : _txGreen,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    // Refresh stats when screen is shown.
+    if (!_cacheStatsLoading && _cacheFiles == 0 && _cacheBytes == 0) {
+      // Fire-and-forget.
+      _loadCacheStats();
+    }
     final screenWidth = MediaQuery.of(context).size.width;
     final isWide = screenWidth >= 900;
     final wideCardWidth = (screenWidth - 48) / 2;
@@ -193,9 +226,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 10),
           _buildTheme(),
           const SizedBox(height: 20),
-          _sec('SECURITY', Icons.security_outlined),
+          _sec('NETWORK', Icons.router_outlined),
           const SizedBox(height: 10),
-          _buildSecurity(),
+          _buildNetwork(),
+          const SizedBox(height: 20),
+          _sec('LOCAL CACHE', Icons.storage_outlined),
+          const SizedBox(height: 10),
+          _buildLocalCache(),
           const SizedBox(height: 20),
           _sec('FONT SIZE', Icons.text_fields_outlined),
           const SizedBox(height: 10),
@@ -428,50 +465,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     }).toList(),
-  );
-
-  Widget _buildSecurity() => Container(
-    decoration: BoxDecoration(
-      color: ZbxT.card(context),
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: ZbxT.rim(context)),
-    ),
-    child: Column(
-      children: [
-        SwitchListTile(
-          value: _allowSelfSigned,
-          onChanged: _setAllowSelfSigned,
-          activeThumbColor: _warnAmb,
-          activeTrackColor: _warnAmb.withValues(alpha: 0.35),
-          title: Text(
-            'Allow Self-Signed TLS Certificate',
-            style: TextStyle(
-              color: ZbxT.textPri(context),
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          subtitle: Text(
-            'Use only for lab/internal testing. Keep OFF in production.',
-            style: TextStyle(color: ZbxT.textSec(context), fontSize: 11),
-          ),
-        ),
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: _warnAmb.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: _warnAmb.withValues(alpha: 0.35)),
-          ),
-          child: Text(
-            'When enabled, the app only bypasses certificate trust checks for the configured API host.',
-            style: TextStyle(fontSize: 11, color: ZbxT.textSec(context)),
-          ),
-        ),
-      ],
-    ),
   );
 
   Widget _buildFonts() => Container(
@@ -781,6 +774,113 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child,
         ],
       ),
+    ),
+  );
+
+  Widget _buildNetwork() => Container(
+    decoration: BoxDecoration(
+      color: ZbxT.card(context),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: ZbxT.rim(context)),
+    ),
+    padding: const EdgeInsets.all(14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Relay endpoints are fixed by policy (automatic fallback):',
+          style: TextStyle(fontSize: 11, color: ZbxT.textSec(context)),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: ZbxT.lift(context),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: ZbxT.rim(context)),
+          ),
+          child: Text(
+            '1) https://192.168.10.100:8443\n'
+            '2) https://zabbix-mobile-backend.duckdns.org:8443\n'
+            '3) https://tunnel.zabbix-ngp-mobile.net.eu.org:443',
+            style: TextStyle(
+              fontSize: 11,
+              color: ZbxT.textPri(context),
+              fontFamily: 'monospace',
+              height: 1.35,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildLocalCache() => Container(
+    decoration: BoxDecoration(
+      color: ZbxT.card(context),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: ZbxT.rim(context)),
+    ),
+    padding: const EdgeInsets.all(14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Store host/item metadata locally',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: ZbxT.textPri(context),
+                ),
+              ),
+            ),
+            Switch(
+              value: widget.settings.metaCacheEnabled,
+              onChanged: (v) async {
+                await widget.settings.setMetaCacheEnabled(v);
+                await _loadCacheStats();
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          widget.settings.metaCacheEnabled
+              ? 'Faster browsing: hosts, items, LLD rules and prototypes are cached and refreshed using checksums.'
+              : 'Always fetch from relay: no metadata is stored locally (may be slower on WAN).',
+          style: TextStyle(fontSize: 11, color: ZbxT.textSec(context), height: 1.4),
+        ),
+        const SizedBox(height: 12),
+        Container(height: 1, color: ZbxT.rim(context)),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _cacheStatsLoading
+                    ? 'Calculating cache size…'
+                    : 'Cache: $_cacheFiles files • ${_fmtBytes(_cacheBytes)}',
+                style: TextStyle(fontSize: 11, color: ZbxT.textSec(context)),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: _cacheStatsLoading ? null : _loadCacheStats,
+              icon: const Icon(Icons.refresh_outlined, size: 16),
+              label: const Text('Refresh'),
+            ),
+            const SizedBox(width: 6),
+            TextButton.icon(
+              onPressed: _cacheStatsLoading ? null : _clearLocalCache,
+              icon: const Icon(Icons.delete_outline, size: 16),
+              label: const Text('Clear'),
+            ),
+          ],
+        ),
+      ],
     ),
   );
 }
