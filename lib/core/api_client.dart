@@ -148,7 +148,6 @@ class ApiClient {
 
   // ── Auth token ────────────────────────────────────────────────────────────────
   static String? _authToken;
-  static String? get authToken => _authToken;
   static bool get isLoggedIn => _authToken != null && _authToken!.isNotEmpty;
 
   static Future<void> login(String username, String password) async {

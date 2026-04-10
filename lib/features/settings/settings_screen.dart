@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../core/app_cache.dart';
 import '../../core/app_settings.dart';
-import '../../core/local_store.dart';
+import '../../core/secure_store.dart';
 import '../../core/zbx_theme.dart';
 
 const _rxBlue = ZbxPalette.rxBlue;
@@ -173,8 +173,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await widget.settings.setNotifFilter(f);
     var synced = true;
     try {
-      final s = await LocalStore.readMap('fcm:token');
-      final t = (s?['token'] ?? '').toString();
+      final t = (await SecureStore.read('fcm:token')) ?? '';
       if (t.isNotEmpty) await ApiClient.updateDeviceFilter(t, f.toJson());
     } catch (_) {
       synced = false;

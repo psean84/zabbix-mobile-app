@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'core/api_client.dart';
 import 'core/app_cache.dart';
 import 'core/app_settings.dart';
-import 'core/local_store.dart';
+import 'core/secure_store.dart';
 import 'core/zbx_theme.dart';
 import 'features/home/home_screen.dart';
 import 'features/login/login_screen.dart';
@@ -278,8 +278,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         return;
       }
 
-      // Store FCM token locally for filter sync
-      await LocalStore.writeMap('fcm:token', {'token': t});
+      // Store FCM token in secure storage
+      await SecureStore.write('fcm:token', t);
 
       // Register with current filter preferences
       final filter = widget.settings.notifFilter.toJson();
