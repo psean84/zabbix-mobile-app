@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -17,12 +18,25 @@ class DbHelper {
   static const int _dbVersion = 1;
 
   Database? _db;
+  Completer<Database>? _initCompleter;
 
   /// Returns the singleton database instance, creating it on first access.
+  /// Uses a [Completer] to ensure only one initialization runs even if
+  /// multiple callers await [database] concurrently.
   Future<Database> get database async {
     if (_db != null) return _db!;
-    _db = await _initDb();
-    return _db!;
+    if (_initCompleter != null) return _initCompleter!.future;
+    _initCompleter = Completer<Database>();
+    try {
+      final db = await _initDb();
+      _db = db;
+      _initCompleter!.complete(db);
+      return db;
+    } catch (e) {
+      _initCompleter!.completeError(e);
+      _initCompleter = null;
+      rethrow;
+    }
   }
 
   Future<Database> _initDb() async {
@@ -33,6 +47,9 @@ class DbHelper {
       version: _dbVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
     );
   }
 
@@ -402,6 +419,7 @@ class DbHelper {
     if (db != null && db.isOpen) {
       await db.close();
       _db = null;
+      _initCompleter = null;
     }
   }
 
@@ -830,7 +848,7 @@ class DbHelper {
       {
         'token': token,
         'platform': platform,
-        'filter': filter.toString(),
+        'filter': jsonEncode(filter),
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
