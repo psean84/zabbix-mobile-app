@@ -254,8 +254,10 @@ class AppSettings extends ChangeNotifier {
         _themeMode =
             AppThemeMode.values[ti.clamp(0, AppThemeMode.values.length - 1)];
         _rememberMe = raw['rememberMe'] as bool? ?? true;
-        _allowSelfSignedCertificates =
-            raw['allowSelfSignedCertificates'] as bool? ?? true;
+        // Self-signed cert bypass is intentionally NOT restored from disk.
+        // Users must re-enable it each session to avoid silently running
+        // with TLS validation disabled.
+        _allowSelfSignedCertificates = false;
         _autoSelectEndpoint = raw['autoSelectEndpoint'] as bool? ?? true;
         _preferIntranet = raw['preferIntranet'] as bool? ?? true;
         // Relay endpoints are fixed by app policy.
@@ -284,7 +286,6 @@ class AppSettings extends ChangeNotifier {
       'fontSize': _fontSize.index,
       'themeMode': _themeMode.index,
       'rememberMe': _rememberMe,
-      'allowSelfSignedCertificates': _allowSelfSignedCertificates,
       'autoSelectEndpoint': _autoSelectEndpoint,
       'preferIntranet': _preferIntranet,
       'intranetUrl': _intranetUrl,
